@@ -1,0 +1,4 @@
+#Condition file number 1
+
+#BL3 FEL shutter
+xfel_bl_3_shutter_1_open_valid/status

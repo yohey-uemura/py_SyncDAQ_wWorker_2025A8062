@@ -1,0 +1,18 @@
+########################Motor list for SACLA XAFS########################
+# 'eqid': the motor whose position you want to know.
+#  This file must be written according to the yaml format.
+#  Do not change the key name 'eqid'
+# 	[Settings on March 18, 2016]
+# 	   for delay = "xfel_bl_3_st_2_motor_1"
+# 	   for tilt of mirror = "xfel_bl_3_st_2_motor_6"
+# 	   for rotation of mirror = "xfel_bl_3_st_2_motor_5"
+#########################################################################
+eqid:
+ delay: xfel_bl_3_st_2_motor_1
+ jet: xfel_bl_3_st_2_motor_2
+ mtilt: xfel_bl_3_st_2_motor_5
+ mrot: xfel_bl_3_st_2_motor_6
+laser:
+ pd: xfel_bl_3_st_2_pd_user_4_fitting_peak/voltage
+mpccd:
+ id: MPCCD-1B1-M03-003

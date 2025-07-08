@@ -1,0 +1,7 @@
+#photodiode:
+xfel_bl_3_st_2_pd_user_"X"_fitting_peak/voltage
+%% "X" is between 1 and 15
+#double_crystal_monochrometor
+xfel_bl_3_tc_mono_1_theta/position
+#delay position for EH2
+xfel_bl_3_st_2_motor_1/position
