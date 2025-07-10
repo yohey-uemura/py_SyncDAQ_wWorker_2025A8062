@@ -1,5 +1,7 @@
-import sys, os, string, io, glob, re, yaml, math, time, shutil, queue
+import sys, os, string, io, glob, re, yaml, math, time, shutil, queue, natsort
 from itertools import count
+
+import h5py
 import numpy as np
 import pandas as pd
 import subprocess as sub
@@ -36,6 +38,7 @@ class Worker(QThread):
 
 class syncDAQ(QThread):
     process_end = Signal(float)
+    nsplit = 5
 
     def __init__(self, BL, rnum, confdir, outpath, devlist,
                  use_mpccd, mpccd, bgfile,
@@ -124,15 +127,81 @@ class syncDAQ(QThread):
                     df['laser_pd'] = np.array(out[-1])
 
                     if self.use_mpccd:
-                        ONOFF = 'laseron' * (z == 0) + 'laseroff' * (z == 1)
-                        bgdata = np.load(self.bgfile)
-                        print (f">>> Process MPCCD:{ONOFF} <<<")
-                        print (f'{self.c_ll}, {self.c_ul}')
-                        df['mpccd'] = self.getMPCCD(self.rnum,self.mpccd,_taglist,bgdata,
-                                                    self.roi_x_ll,self.roi_y_ll,self.roi_x_ul,self.roi_y_ul,
-                                                    self.c_ll,self.c_ul)
+                        job_ids = []
+                        job_errs = []
+                        df_pbs = pd.DataFrame(
+                            index=[f'job: {x:02d}' for x in range(int(self.nsplit))],
+                            columns=['stdout', 'stderr']
+                        )
+
+                        arrs = np.array_split(np.array(_taglist), self.nsplit)
+                        print(f">>> Job submission: {ONOFF}")
+                        for i, _a in enumerate(arrs):
+                            str_arr = '[' + ':'.join([str(x) for x in _a.astype(int)]) + ']'
+                            str_pars = f'RUN={self.rnum},SPLIT={i},TAGS={str_arr},' + f'OUTDIR={self.outpath},SUFIX={ONOFF},'
+                            str_pars += f'ROIS={self.roi_x_ll}:{self.roi_x_ul}:{self.roi_y_ll}:{self.roi_y_ul},'
+                            str_pars += f'THR={self.c_ll}:{self.c_ul}'
+                            args = ['qsub', '-v', str_pars, '-l mem=30G', '-o /work/uemura/qsub_outs/',
+                                    '-e /work/uemura/qsub_outs/', 'getMPCCD_pp.py']
+                            pbs_getMPCCD = sub.Popen(args, stdout=sub.PIPE, stderr=sub.PIPE)
+                            _data, _err = pbs_getMPCCD.communicate()
+                            job_ids.append(_data.decode('utf-8').rstrip())
+                            job_errs.append(_err.decode('utf-8').rstrip())
+
+                        df_pbs['stdout'] = job_ids
+                        df_pbs['stderr'] = job_errs
+                        if all([('fep' in x) for x in job_ids]):
+                            print(">>> The job submission succeeded (^o^)/ <<<")
+
+                            """
+                            Check job status
+                            """
+                            job_status = []
+                            for _job in job_ids:
+                                args = ['qstat', _job]
+                                qstat = sub.Popen(args, stdout=sub.PIPE, stderr=sub.PIPE)
+                                stdout, stderr = qstat.communicate()
+                                # print(stdout, stderr)
+                                if 'finished' in stderr.decode('utf-8').rstrip():
+                                    job_status.append(True)
+                                else:
+                                    job_status.append(False)
+
+                            while not (all(job_status)):
+                                time.sleep(5)
+                                job_status = []
+                                for _job in job_ids:
+                                    args = ['qstat', _job]
+                                    qstat = sub.Popen(args, stdout=sub.PIPE, stderr=sub.PIPE)
+                                    stdout, stderr = qstat.communicate()
+                                    # print(stdout, stderr)
+                                    if 'finished' in stderr.decode('utf-8').rstrip():
+                                        job_status.append(True)
+                                    else:
+                                        job_status.append(False)
+
+                            hdffiles = [x for x in os.listdir(self.outpath + f'/r{self.rnum}') if re.match(f'run_{self.rnum}_mpccd_\d\d_{ONOFF}\.h5', x)]
+                            if len(hdffiles) == self.nsplit:
+                                print("  >>> MPCCD was processed properly <<<")
+                                arr_counts = np.array([])
+                                arr_tags = np.array([])
+                                outdir = self.outpath+f'/r{self.rnum}'
+                                for f in natsort.natsorted(hdffiles):
+                                    h5 = h5py.File(outdir+'/'+f)
+                                    arr_counts = np.append(arr_counts,h5[f'run_{self.rnum}/counts'][:])
+                                    arr_tags = np.append(arr_counts, h5[f'run_{self.rnum}/tags'][:])
+                                df['mpccd'] = arr_counts
+                            else:
+                                print("!! hdf5 files are not created properly...")
+                                pass
+
+                        else:
+                            print(">>> The job submission faild (ToT) <<<")
 
                     pd.DataFrame(df).to_csv(self.outpath + '/' + f"r{self.rnum}" + '/' + f'{ONOFF}_r{self.rnum}.csv',index=False)
+
+
+
             else:
                 out = Parallel(n_jobs=8, backend='threading')(
                     delayed(dbpy.read_syncdatalist)(d, taghi, tuple(taglist_all)) for d in self.devlist)
@@ -147,17 +216,83 @@ class syncDAQ(QThread):
                 df['laser_pd'] =  np.array(out[-1])
 
                 if self.use_mpccd:
-                    bgdata = np.load(self.bgfile)
-                    print(">>> Process MPCCD <<<")
-                    df['mpccd'] = self.getMPCCD(self.rnum, self.mpccd, taglist_all, bgdata,
-                                                self.roi_x_ll,self.roi_y_ll,self.roi_x_ul,self.roi_y_ul,
-                                                self.c_ll,self.c_ul)
+                    job_ids = []
+                    job_errs = []
+                    df_pbs = pd.DataFrame(
+                        index=[f'job: {x:02d}' for x in range(int(self.nsplit * 2))],
+                        columns=['stdout', 'stderr']
+                    )
+
+                    arrs = np.array_split(np.array(taglist_all), int(self.nsplit*2))
+                    for i, _a in enumerate(arrs):
+                        str_arr = '[' + ':'.join([str(x) for x in _a.astype(int)]) + ']'
+                        str_pars = f'RUN={self.rnum},SPLIT={i},TAGS={str_arr},' + f'OUTDIR={self.outpath},SUFIX=all,'
+                        str_pars += f'ROIS={self.roi_x_ll}:{self.roi_x_ul}:{self.roi_y_ll}:{self.roi_y_ul},'
+                        str_pars += f'THR={self.c_ll}:{self.c_ul}'
+                        args = ['qsub', '-v', str_pars, '-l mem=30G', '-o /work/uemura/qsub_outs/',
+                                '-e /work/uemura/qsub_outs/', 'getMPCCD_pp.py']
+                        pbs_getMPCCD = sub.Popen(args, stdout=sub.PIPE, stderr=sub.PIPE)
+                        _data, _err = pbs_getMPCCD.communicate()
+                        job_ids.append(_data.decode('utf-8').rstrip())
+                        job_errs.append(_err.decode('utf-8').rstrip())
+
+                    df_pbs['stdout'] = job_ids
+                    df_pbs['stderr'] = job_errs
+                    if all([('fep' in x) for x in job_ids]):
+                        print(">>> The job submission succeeded (^o^)/ <<<")
+
+                        """
+                        Check job status
+                        """
+                        job_status = []
+                        for _job in job_ids:
+                            args = ['qstat', _job]
+                            qstat = sub.Popen(args, stdout=sub.PIPE, stderr=sub.PIPE)
+                            stdout, stderr = qstat.communicate()
+                            # print(stdout, stderr)
+                            if 'finished' in stderr.decode('utf-8').rstrip():
+                                job_status.append(True)
+                            else:
+                                job_status.append(False)
+
+                        while not (all(job_status)):
+                            time.sleep(5)
+                            job_status = []
+                            for _job in job_ids:
+                                args = ['qstat', _job]
+                                qstat = sub.Popen(args, stdout=sub.PIPE, stderr=sub.PIPE)
+                                stdout, stderr = qstat.communicate()
+                                # print(stdout, stderr)
+                                if 'finished' in stderr.decode('utf-8').rstrip():
+                                    job_status.append(True)
+                                else:
+                                    job_status.append(False)
+
+                        hdffiles = [x for x in os.listdir(self.outpath + f'/r{self.rnum}') if
+                                    re.match(f'run_{self.rnum}_mpccd_\d\d_{ONOFF}\.h5', x)]
+                        if len(hdffiles) == self.nsplit:
+                            arr_counts = np.array([])
+                            arr_tags = np.array([])
+                            outdir = self.outpath + f'/r{self.rnum}'
+                            for f in natsort.natsorted(hdffiles):
+                                h5 = h5py.File(outdir + '/' + f)
+                                arr_counts = np.append(arr_counts, h5[f'run_{self.rnum}/counts'][:])
+                                arr_tags = np.append(arr_counts, h5[f'run_{self.rnum}/tags'][:])
+                            df['mpccd'] = arr_counts
+                        else:
+                            print("!! hdf5 files are not created properly...")
+                            pass
+
+                    else:
+                        print(">>> The job submission faild (ToT) <<<")
+
                 pd.DataFrame(df).to_csv(self.outpath + '/' + f"r{self.rnum}" + '/' + f'laserall_r{self.rnum}.csv',index=False)
 
         except Exception as e:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             linenumber = exc_tb.tb_lineno
             print(f'Line {linenumber}: {str(e)}')
+
         self.process_end.emit(time.time() - stime)
 
 class QBridgeClient(QObject):
@@ -171,7 +306,7 @@ class QBridgeClient(QObject):
     new_data = Signal(list,list,list)
     HOMEDIR = os.environ['HOME']
     PYDIR = HOMEDIR+'/python'
-    PROGRAMDIR = PYDIR+'/py_SyncDAQ_wWorker_2025A8062_beta'
+    PROGRAMDIR = PYDIR+'/py_SyncDAQ_wWorker_2025A8062_dev'
     confdir = PROGRAMDIR+'/Event_Conf'
 
 
@@ -256,7 +391,8 @@ class QBridgeClient(QObject):
 
     def reset_worker(self):
         self.syncdaq = None
-        self.worker.paused = False
+        if self.worker:
+            self.worker.paused = False
 
     def _dequeue_one(self, rnum):
         #print(rnum)

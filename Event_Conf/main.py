@@ -134,7 +134,7 @@ class MainWindow(qt.QMainWindow):
                     }
                     for _m in motors:
                         _df[_m.replace('xfel_bl_3_st_2_','')] = []
-                    if self.u.checkBox.isChecked() and ('mpccd' in df.keys()):
+                    if self.u.checkBox.isCheckable():
                         _df['mpccd'] = []
                     for i, tag in enumerate(df['#Tag'].values):
                         _df['Tag'].append(tag)
@@ -161,7 +161,7 @@ class MainWindow(qt.QMainWindow):
                             _df[sIf].append(float(df[sIf].values[i].replace('V', '')))
 
                         ######## mpccd ##########
-                        if self.u.checkBox.isChecked() and ('mpccd' in df.keys()):
+                        if self.u.checkBox.isCheckable():
                             if (df[sI0_1].values[i] in ['not-converged', 'saturated']) or (df[sI0_2].values[i] in ['not-converged', 'saturated']):
                                 _df['mpccd'].append(np.nan)
                             else:
@@ -180,7 +180,7 @@ class MainWindow(qt.QMainWindow):
                             'If': np.array(_df[sIf])
                         }
                     dfout[label] = _df[label]
-                    if self.u.checkBox.isChecked() and ('mpccd' in df.keys()):
+                    if self.u.checkBox.isCheckable():
                         dfout['mpccd'] = _df['mpccd']
 
                     for _m in motors:
@@ -206,7 +206,7 @@ class MainWindow(qt.QMainWindow):
                     for _m in motors:
                         _df[_m.replace('xfel_bl_3_st_2_', '')] = []
 
-                    if self.u.checkBox.isChecked() and ('mpccd' in df.keys()):
+                    if self.u.checkBox.isCheckable():
                         _df['mpccd'] = []
                     for i, tag in enumerate(df['#Tag'].values):
                         _df['Tag'].append(tag)
@@ -234,7 +234,7 @@ class MainWindow(qt.QMainWindow):
                             _df[sIf].append(float(df[sIf].values[i].replace('V', '')))
 
                         ######## mpccd ##########
-                        if self.u.checkBox.isChecked() and ('mpccd' in df.keys()):
+                        if self.u.checkBox.isCheckable():
                             if (df[sI0_1].values[i] in ['not-converged', 'saturated']) or (df[sI0_2].values[i] in ['not-converged', 'saturated']):
                                 _df['mpccd'].append(np.nan)
                             else:
@@ -253,7 +253,7 @@ class MainWindow(qt.QMainWindow):
                         'If': np.array(_df[sIf])
                     }
                     dfout[label] = _df[label]
-                    if self.u.checkBox.isChecked() and ('mpccd' in df.keys()):
+                    if self.u.checkBox.isCheckable():
                         dfout['mpccd'] = _df['mpccd']
 
                     for _m in motors:
@@ -440,7 +440,7 @@ class MainWindow(qt.QMainWindow):
                                  sep=' ', index=False)
                     self.u.textBrowser_2.append(f"     >>>>>>>>>> Post processing: {time.time() - stime: .1f} s <<<<<<<<<<")
 
-                    if self.u.checkBox.isChecked() and ('mpccd' in df.keys()):
+                    if self.u.checkBox.isChecked():
                         monos = np.unique(data_on['mono'].values)
                         motor_values = np.array(
                             [np.unique(data_on[_m.replace('xfel_bl_3_st_2_', '')].values) for _m in motors])
@@ -649,9 +649,7 @@ class MainWindow(qt.QMainWindow):
                 self.current_rnum = self.u.sB_RN_start.value()
                 self.client.set_endpoint(run_start,run_end,device_list,outpath)
                 if self.u.checkBox.isChecked():
-                    self.client.setMPCCD(True,self.u.lineEdit_2.text(),f'{self.PROGRAMDIR}/mpccd_bg.npy',
-                                         self.u.roi_x_ll.value(),self.u.roi_x_ul.value(),self.u.roi_y_ll.value(),self.u.roi_y_ul.value(),
-                                         self.u.dsb_ll.value(),self.u.dsb_ul.value())
+                    self.client.setMPCCD(True,self.u.lineEdit_2.text(),f'{self.PROGRAMDIR}/mpccd_bg.npy')
 
                 self.u.textBrowser_2.clear()
                 self.client.start()
